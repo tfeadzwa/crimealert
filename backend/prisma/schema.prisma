@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Report {
+  id                String    @id @default(uuid())
+  referenceNumber   String    @unique @map("reference_number")
+  type              String
+  title             String?
+  description       String
+  
+  // Location
+  latitude          Float?
+  longitude         Float?
+  address           String?
+  landmark          String?
+  
+  // Metadata
+  submittedAt       DateTime  @default(now()) @map("submitted_at")
+  occurredAt        DateTime? @map("occurred_at")
+  status            String    @default("pending")
+  priority          String    @default("medium")
+  
+  // Anonymity
+  isAnonymous       Boolean   @default(true) @map("is_anonymous")
+  contactMethod     String?   @map("contact_method")
+  contactValue      String?   @map("contact_value_encrypted")
+  
+  // Language
+  originalLanguage  String    @default("en") @map("original_language")
+  translations      Json?
+  
+  // AI Analysis
+  aiCategory        String?   @map("ai_category")
+  aiSeverity        String?   @map("ai_severity")
+  aiKeywords        String[]  @map("ai_keywords")
+  aiConfidence      Float?    @map("ai_confidence")
+  
+  // Assignment
+  assignedToId      String?   @map("assigned_to")
+  assignedAt        DateTime? @map("assigned_at")
+  assignedTo        User?     @relation("AssignedReports", fields: [assignedToId], references: [id])
+  
+  // Resolution
+  resolvedAt        DateTime? @map("resolved_at")
+  resolutionNotes   String?   @map("resolution_notes")
+  
+  // SMS Tracking
+  sourceChannel     String?   @map("source_channel")         // "web" or "sms"
+  smsMessageId      String?   @unique @map("sms_message_id")
+  smsMessage        SmsMessage? @relation(fields: [smsMessageId], references: [id])
+  reviewStatus      String    @default("approved") @map("review_status")  // "pending_review", "approved", "rejected"
+  reviewedBy        String?   @map("reviewed_by")
+  reviewedAt        DateTime? @map("reviewed_at")
+  reviewNotes       String?   @map("review_notes")
+  notificationPhone String?   @map("notification_phone")   // Phone for SMS status updates
+  lastStatusSms     DateTime? @map("last_status_sms")       // Avoid SMS spam
+  
+  // Soft delete
+  deletedAt         DateTime? @map("deleted_at")
+  
+  // Relations
+  media             Media[]
+  assignments       Assignment[]
+  
+  @@index([referenceNumber])
+  @@index([status])
+  @@index([priority])
+  @@index([submittedAt])
+  @@index([assignedToId])
+  @@index([sourceChannel])
+  @@index([reviewStatus])
+  @@map("reports")
+}
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String    @map("password_hash")
+  role              String    // admin, supervisor, officer
+  
+  // Profile
+  firstName         String    @map("first_name")
+  lastName          String    @map("last_name")
+  badgeNumber       String?   @unique @map("badge_number")
+  station           String?
+  department        String?
+  phone             String?
+  
+  // Status
+  isActive          Boolean   @default(true) @map("is_active")
+  isVerified        Boolean   @default(false) @map("is_verified")
+  
+  // Timestamps
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  lastLogin         DateTime? @map("last_login")
+  
+  // 2FA
+  twoFactorSecret   String?   @map("two_factor_secret")
+  twoFactorEnabled  Boolean   @default(false) @map("two_factor_enabled")
+  
+  // Soft delete
+  deletedAt         DateTime? @map("deleted_at")
+  
+  // Relations
+  assignedReports   Report[]  @relation("AssignedReports")
+  assignments       Assignment[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  
+  @@index([email])
+  @@index([badgeNumber])
+  @@index([role])
+  @@map("users")
+}
+
+model Media {
+  id                String    @id @default(uuid())
+  reportId          String    @map("report_id")
+  report            Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  // File info
+  type              String    // image, audio, video
+  originalFilename  String?   @map("original_filename")
+  fileSize          BigInt?   @map("file_size")
+  mimeType          String?   @map("mime_type")
+  
+  // Storage
+  storageProvider   String?   @map("storage_provider")
+  storageKey        String?   @map("storage_key")
+  url               String
+  thumbnailUrl      String?   @map("thumbnail_url")
+  
+  // AI Analysis
+  analysisStatus    String    @default("pending") @map("analysis_status")
+  analysisResult    Json?     @map("analysis_result")
+  transcription     String?
+  transcriptionLang String?   @map("transcription_language")
+  
+  // Metadata
+  uploadedAt        DateTime  @default(now()) @map("uploaded_at")
+  processedAt       DateTime? @map("processed_at")
+  
+  @@index([reportId])
+  @@index([type])
+  @@map("media")
+}
+
+model Assignment {
+  id          String    @id @default(uuid())
+  reportId    String    @map("report_id")
+  userId      String    @map("user_id")
+  assignedBy  String?   @map("assigned_by")
+  
+  report      Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+  
+  assignedAt  DateTime  @default(now()) @map("assigned_at")
+  status      String    @default("active") // active, completed, reassigned
+  notes       String?
+  
+  completedAt DateTime? @map("completed_at")
+  
+  @@index([reportId])
+  @@index([userId])
+  @@index([status])
+  @@map("assignments")
+}
+
+model AuditLog {
+  id            String    @id @default(uuid())
+  userId        String?   @map("user_id")
+  user          User?     @relation(fields: [userId], references: [id])
+  
+  action        String
+  resourceType  String    @map("resource_type")
+  resourceId    String?   @map("resource_id")
+  
+  details       Json?
+  ipAddress     String?   @map("ip_address")
+  userAgent     String?   @map("user_agent")
+  
+  timestamp     DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id])
+  
+  type          String
+  title         String
+  message       String
+  
+  relatedType   String?   @map("related_resource_type")
+  relatedId     String?   @map("related_resource_id")
+  
+  isRead        Boolean   @default(false) @map("is_read")
+  readAt        DateTime? @map("read_at")
+  
+  createdAt     DateTime  @default(now()) @map("created_at")
+  expiresAt     DateTime? @map("expires_at")
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Category {
+  id              String    @id @default(uuid())
+  nameEn          String    @map("name_en")
+  nameSn          String?   @map("name_sn")
+  nameNd          String?   @map("name_nd")
+  
+  descriptionEn   String?   @map("description_en")
+  descriptionSn   String?   @map("description_sn")
+  descriptionNd   String?   @map("description_nd")
+  
+  defaultSeverity String    @map("default_severity")
+  icon            String?
+  color           String?
+  
+  isActive        Boolean   @default(true) @map("is_active")
+  sortOrder       Int       @default(0) @map("sort_order")
+  
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  @@index([isActive])
+  @@map("categories")
+}
+
+// SMS Gateway integration models
+model GatewayClient {
+  id        String   @id @default(uuid())
+  name      String
+  apiKey    String   @unique @map("api_key")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([apiKey])
+  @@map("gateway_clients")
+}
+
+model SmsMessage {
+  id          String   @id @default(uuid())
+  externalId  String?  @map("external_id")
+  sender      String   @map("sender")
+  body        String   @db.Text
+  receivedAt  DateTime @map("received_at")
+  processed   Boolean  @default(false)
+  attempts    Int      @default(0)
+  report      Report?
+  rawPayload  Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([sender])
+  @@index([processed])
+  @@map("sms_messages")
+}
+
+model OutgoingSmsInstruction {
+  id          String   @id @default(uuid())
+  to          String
+  body        String   @db.Text
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  platformId  String?  @map("platform_id")
+  error       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  scheduledAt DateTime?
+
+  @@index([status])
+  @@map("outgoing_sms_instructions")
+}
