@@ -108,43 +108,65 @@ export default function SmsInboxPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="container mx-auto px-4 py-6">
+      <header className="glass sticky top-0 z-50 border-b border-white/50 shadow-lg">
+        <div className="container mx-auto px-4 py-5">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                📱 SMS Inbox
-              </h1>
-              <p className="text-gray-600 mt-1">Review and manage citizen SMS reports</p>
-            </div>
+            {/* Left: Logo + Title */}
             <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm text-gray-600">Officer</p>
-                <p className="font-semibold">{user?.firstName} {user?.lastName}</p>
-                <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-xl shadow-lg">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-extrabold bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  SMS Inbox
+                </h1>
+                <p className="text-xs text-gray-500 mt-0.5">Review and manage citizen SMS reports</p>
+              </div>
+            </div>
+            {/* Right: User + Logout */}
+            <div className="flex items-center gap-3">
+              <div className="hidden md:flex flex-col items-end">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Officer on Duty</p>
+                <p className="font-bold text-gray-800 text-sm">{user?.firstName} {user?.lastName}</p>
+                <span className="inline-block mt-0.5 px-2 py-0.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-xs rounded-full font-semibold capitalize">
+                  {user?.role}
+                </span>
+              </div>
+              <div className="w-11 h-11 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-xl shadow-lg">
+                👮
               </div>
               <button
                 onClick={handleLogout}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl font-semibold text-sm transition shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform"
               >
-                Logout
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>
 
-          {/* Navigation */}
-          <div className="mt-4 flex gap-4 text-sm border-b border-gray-200 -mx-4 px-4">
+          {/* Navigation Tabs */}
+          <div className="mt-5 flex gap-2 overflow-x-auto -mx-4 px-4">
             <Link
               to="/dashboard"
-              className="py-2 px-4 text-gray-600 hover:text-blue-600 transition"
+              className="flex-shrink-0 flex items-center gap-2 py-2.5 px-5 bg-white text-gray-700 hover:text-blue-600 rounded-xl font-semibold text-sm transition border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
             >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
               All Reports
             </Link>
             <button
-              onClick={() => {}}
-              className="py-2 px-4 border-b-2 border-blue-600 text-blue-600 font-medium"
+              className="flex-shrink-0 flex items-center gap-2 py-2.5 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold text-sm shadow-lg"
             >
-              📱 SMS Inbox
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              SMS Inbox
             </button>
           </div>
         </div>
@@ -308,7 +330,7 @@ export default function SmsInboxPage() {
 
       {/* Action Modal */}
       {showActionModal && selectedSms && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
