@@ -322,3 +322,76 @@ export const getSmsInboxStats = async (req: Request, res: Response) => {
     });
   }
 };
+
+// Get full conversation thread for a phone number (both directions)
+export const getConversation = async (req: Request, res: Response) => {
+  try {
+    const { phone } = req.params;
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
+
+    // Fetch all incoming messages from this number
+    const incoming = await prisma.smsMessage.findMany({
+      where: { sender: phone },
+      orderBy: { receivedAt: 'asc' },
+    });
+
+    // Fetch all outgoing instructions to this number
+    const outgoing = await prisma.outgoingSmsInstruction.findMany({
+      where: { to: phone },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Merge and sort by timestamp
+    const thread = [
+      ...incoming.map(m => ({
+        id: m.id,
+        direction: 'in' as const,
+        body: m.body,
+        timestamp: m.receivedAt.toISOString(),
+        status: m.processed ? 'processed' : 'pending',
+        smsId: m.id,
+      })),
+      ...outgoing.map(m => ({
+        id: m.id,
+        direction: 'out' as const,
+        body: m.body,
+        timestamp: m.createdAt.toISOString(),
+        status: m.status,
+        smsId: null,
+      })),
+    ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return res.json({ success: true, data: { phone, thread } });
+  } catch (error) {
+    logger.error('Error in getConversation', { error });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// Send a direct chat message to a phone number (creates OutgoingSmsInstruction)
+export const sendChatMessage = async (req: Request, res: Response) => {
+  try {
+    const { phone } = req.params;
+    const { message } = req.body;
+
+    if (!phone || !message || !message.trim()) {
+      return res.status(400).json({ success: false, message: 'phone and message are required' });
+    }
+
+    const instr = await prisma.outgoingSmsInstruction.create({
+      data: {
+        to: phone,
+        body: `CrimeAlert: ${message.trim()}`,
+        status: 'pending',
+      },
+    });
+
+    logger.info('Chat message queued', { phone, instrId: instr.id });
+    return res.status(201).json({ success: true, data: { id: instr.id, status: instr.status } });
+  } catch (error) {
+    logger.error('Error in sendChatMessage', { error });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};

@@ -117,7 +117,19 @@ export const smsAPI = {
   postOutgoingResult: async (payload: any) => {
     const response = await api.post('/outgoing_sms/result', payload);
     return response.data;
-  }
+  },
+
+  // Conversation thread for a specific phone number
+  getConversation: async (phone: string) => {
+    const response = await api.get(`/admin/sms-conversation/${encodeURIComponent(phone)}`);
+    return response.data;
+  },
+
+  // Send a direct message to a phone number from the chat window
+  sendChatMessage: async (phone: string, message: string) => {
+    const response = await api.post(`/admin/sms-conversation/${encodeURIComponent(phone)}/send`, { message });
+    return response.data;
+  },
 };
 
 export default api;

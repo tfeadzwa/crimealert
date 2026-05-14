@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { smsAPI } from '../services/api';
 import { authService } from '../services/auth';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
 
 interface SmsMessage {
   smsId: string;
@@ -30,6 +36,15 @@ interface PaginationInfo {
   totalPages: number;
 }
 
+interface ThreadMessage {
+  id: string;
+  direction: 'in' | 'out';
+  body: string;
+  timestamp: string;
+  status: string;
+  smsId: string | null;
+}
+
 export default function SmsInboxPage() {
   const [messages, setMessages] = useState<SmsMessage[]>([]);
   const [stats, setStats] = useState<SmsStats | null>(null);
@@ -42,7 +57,24 @@ export default function SmsInboxPage() {
   const [actionType, setActionType] = useState<'approve' | 'reject' | 'clarify'>('approve');
   const [actionNote, setActionNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Chat panel state
+  const [chatPhone, setChatPhone] = useState<string | null>(null);
+  const [chatThread, setChatThread] = useState<ThreadMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const navigate = useNavigate();
+
+  const showToast = useCallback((message: string, type: Toast['type'] = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  }, []);
   const user = authService.getUser();
 
   const handleLogout = () => {
@@ -79,6 +111,69 @@ export default function SmsInboxPage() {
     loadStats();
   }, [page]);
 
+  // ── Chat panel functions ──────────────────────────────────────────────────
+
+  const fetchThread = useCallback(async (phone: string) => {
+    try {
+      const res = await smsAPI.getConversation(phone);
+      setChatThread(res.data?.thread || []);
+    } catch (e) {
+      console.error('Failed to load conversation', e);
+    }
+  }, []);
+
+  const openChat = useCallback((phone: string) => {
+    setChatPhone(phone);
+    setChatLoading(true);
+    smsAPI.getConversation(phone)
+      .then(res => setChatThread(res.data?.thread || []))
+      .catch(() => {})
+      .finally(() => setChatLoading(false));
+  }, []);
+
+  const closeChat = useCallback(() => {
+    if (chatPollRef.current) clearInterval(chatPollRef.current);
+    chatPollRef.current = null;
+    setChatPhone(null);
+    setChatThread([]);
+    setChatInput('');
+  }, []);
+
+  // Start polling when chat opens, stop when it closes
+  useEffect(() => {
+    if (chatPollRef.current) clearInterval(chatPollRef.current);
+    if (chatPhone) {
+      chatPollRef.current = setInterval(() => fetchThread(chatPhone), 5000);
+    }
+    return () => {
+      if (chatPollRef.current) clearInterval(chatPollRef.current);
+    };
+  }, [chatPhone, fetchThread]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatThread]);
+
+  const handleChatSend = async () => {
+    if (!chatPhone || !chatInput.trim() || chatSending) return;
+    const msg = chatInput.trim();
+    setChatInput('');
+    setChatSending(true);
+    try {
+      await smsAPI.sendChatMessage(chatPhone, msg);
+      await fetchThread(chatPhone);
+      showToast('📨 Message queued for delivery via gateway.', 'info');
+    } catch (e) {
+      showToast('Failed to send message.', 'error');
+      setChatInput(msg); // restore on failure
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   const handleAction = async () => {
     if (!selectedSms) return;
 
@@ -86,10 +181,13 @@ export default function SmsInboxPage() {
     try {
       if (actionType === 'approve') {
         await smsAPI.approveSms(selectedSms.smsId, { notes: actionNote });
+        showToast('✅ Report approved and formal case created.', 'success');
       } else if (actionType === 'reject') {
         await smsAPI.rejectSms(selectedSms.smsId, { reason: actionNote });
+        showToast('SMS rejected. A reply will be sent to the citizen via the gateway.', 'info');
       } else if (actionType === 'clarify') {
         await smsAPI.askClarification(selectedSms.smsId, { question: actionNote });
+        showToast('📨 Clarification queued — the gateway app will send it to the citizen within 30 seconds.', 'info');
       }
 
       setShowActionModal(false);
@@ -99,7 +197,7 @@ export default function SmsInboxPage() {
       loadStats();
     } catch (e) {
       console.error('Action failed', e);
-      alert('Failed to process SMS');
+      showToast('Action failed. Please check your connection and try again.', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -258,7 +356,13 @@ export default function SmsInboxPage() {
                         {new Date(sms.receivedAt).toLocaleDateString()} {new Date(sms.receivedAt).toLocaleTimeString()}
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => openChat(sms.sender)}
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded transition"
+                          >
+                            💬 Chat
+                          </button>
                           <button
                             onClick={() => {
                               setSelectedSms(sms);
@@ -328,6 +432,124 @@ export default function SmsInboxPage() {
         </div>
       </div>
 
+      {/* ── Chat Slide-in Panel ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {chatPhone && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="chat-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-gray-900/30 backdrop-blur-sm z-40"
+              onClick={closeChat}
+            />
+
+            {/* Drawer */}
+            <motion.div
+              key="chat-drawer"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col"
+            >
+              {/* Drawer Header */}
+              <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex-shrink-0">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg font-bold flex-shrink-0">
+                  {chatPhone.slice(-2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold truncate">{chatPhone}</p>
+                  <p className="text-xs text-blue-100">SMS Conversation</p>
+                </div>
+                <button
+                  onClick={closeChat}
+                  className="ml-2 w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition text-lg"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Messages area */}
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gray-50">
+                {chatLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-400 text-sm">Loading conversation...</p>
+                  </div>
+                ) : chatThread.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-400 text-sm">No messages yet.</p>
+                  </div>
+                ) : (
+                  chatThread.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                          msg.direction === 'out'
+                            ? 'bg-gradient-to-br from-indigo-600 to-blue-600 text-white rounded-br-sm'
+                            : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
+                        }`}
+                      >
+                        <p className="leading-relaxed">{msg.body}</p>
+                        <div className={`flex items-center gap-1.5 mt-1 ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                          <span className={`text-[10px] ${msg.direction === 'out' ? 'text-blue-200' : 'text-gray-400'}`}>
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {' · '}
+                            {new Date(msg.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </span>
+                          {msg.direction === 'out' && (
+                            <span className={`text-[10px] ${msg.status === 'sent' ? 'text-green-300' : 'text-yellow-300'}`}>
+                              {msg.status === 'sent' ? '✓✓' : '⏳'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Input bar */}
+              <div className="flex-shrink-0 px-4 py-3 bg-white border-t border-gray-200">
+                <div className="flex gap-2 items-end">
+                  <textarea
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                    placeholder="Type a message... (Enter to send)"
+                    rows={2}
+                    className="flex-1 resize-none px-4 py-2.5 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                  />
+                  <button
+                    onClick={handleChatSend}
+                    disabled={chatSending || !chatInput.trim()}
+                    className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-300 text-white rounded-2xl flex items-center justify-center transition shadow-lg"
+                  >
+                    {chatSending ? (
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 rotate-90" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5 text-center">Messages are sent via the SMS gateway app · auto-refreshes every 5s</p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Action Modal */}
       {showActionModal && selectedSms && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -381,6 +603,27 @@ export default function SmsInboxPage() {
           </motion.div>
         </div>
       )}
+
+      {/* Toast Notifications */}
+      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, x: 60, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 60, scale: 0.9 }}
+              className={`pointer-events-auto flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border max-w-sm text-sm font-medium
+                ${toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+                  toast.type === 'info' ? 'bg-blue-50 border-blue-200 text-blue-800' :
+                  'bg-green-50 border-green-200 text-green-800'}`}
+            >
+              <span className="flex-1">{toast.message}</span>
+              <button onClick={() => setToasts(p => p.filter(t => t.id !== toast.id))} className="opacity-50 hover:opacity-100 transition">✕</button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

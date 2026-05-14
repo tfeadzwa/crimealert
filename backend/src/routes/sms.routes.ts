@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { postIncomingSms, getOutgoingSms, postOutgoingResult, getSmsMessages, markSmsProcessed } from '../controllers/sms.controller';
-import { getSmsInbox, approveSmsReport, rejectSmsReport, askClarificationSms, getSmsInboxStats } from '../controllers/sms.admin.controller';
+import { getSmsInbox, approveSmsReport, rejectSmsReport, askClarificationSms, getSmsInboxStats, getConversation, sendChatMessage } from '../controllers/sms.admin.controller';
 import { authMiddleware, requireRole } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -20,5 +20,9 @@ router.get('/admin/sms-inbox/stats', authMiddleware, requireRole(['admin', 'supe
 router.post('/admin/sms-inbox/:smsId/approve', authMiddleware, requireRole(['admin', 'supervisor', 'officer']), approveSmsReport);
 router.post('/admin/sms-inbox/:smsId/reject', authMiddleware, requireRole(['admin', 'supervisor', 'officer']), rejectSmsReport);
 router.post('/admin/sms-inbox/:smsId/ask-clarification', authMiddleware, requireRole(['admin', 'supervisor', 'officer']), askClarificationSms);
+
+// Conversation thread endpoints
+router.get('/admin/sms-conversation/:phone', authMiddleware, requireRole(['admin', 'supervisor', 'officer']), getConversation);
+router.post('/admin/sms-conversation/:phone/send', authMiddleware, requireRole(['admin', 'supervisor', 'officer']), sendChatMessage);
 
 export default router;
