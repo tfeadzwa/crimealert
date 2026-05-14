@@ -131,7 +131,16 @@ class AppState extends ChangeNotifier {
 
     // Start listening and forward to server + persist
     await smsService.startListening((SmsMessageModel msg) async {
-      addLog('Received SMS from ${msg.address}');
+      // Only process SMS that start with the crime report keyword.
+      // This prevents personal, bank, OTP and promotional messages from
+      // being forwarded to the backend.
+      const crimeKeyword = 'CRIME:';
+      if (!msg.body.trimLeft().toUpperCase().startsWith(crimeKeyword)) {
+        addLog('⏭ Ignored non-crime SMS from ${msg.address} (missing "$crimeKeyword" prefix)');
+        return;
+      }
+
+      addLog('🚨 Crime report SMS from ${msg.address}');
       await _repo.saveIncoming(msg);
 
       // Try to post to server (fire-and-forget for phase 1)

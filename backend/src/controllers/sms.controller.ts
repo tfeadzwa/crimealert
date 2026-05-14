@@ -31,6 +31,13 @@ export const postIncomingSms = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'address and body are required' });
     }
 
+    // Only accept messages that start with the crime report keyword.
+    const CRIME_KEYWORD = 'CRIME:';
+    if (!body.trimStart().toUpperCase().startsWith(CRIME_KEYWORD)) {
+      logger.info('Rejected non-crime SMS (missing keyword)', { sender: address });
+      return res.status(200).json({ success: false, message: 'Message ignored: not a crime report' });
+    }
+
     const receivedAt = date ? new Date(date) : new Date();
 
     const sms = await prisma.smsMessage.create({
